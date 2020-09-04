@@ -141,6 +141,10 @@ class ConfigScope(object):
         self.path = path           # path to directory containing configs.
         self.sections = syaml.syaml_dict()  # sections read from config files.
 
+    @property
+    def is_platform_dependent(self):
+        return '/' in self.name
+
     def get_section_filename(self, section):
         _validate_section_name(section)
         return os.path.join(self.path, "%s.yaml" % section)
@@ -185,16 +189,16 @@ class SingleFileScope(ConfigScope):
         Arguments:
             schema (dict): jsonschema for the file to read
             yaml_path (list): list of dict keys in the schema where
-                config data can be found;
-
-        Elements of ``yaml_path`` can be tuples or lists to represent an
-        "or" of keys (e.g. "env" or "spack" is ``('env', 'spack')``)
-
+                config data can be found
         """
         super(SingleFileScope, self).__init__(name, path)
         self._raw_data = None
         self.schema = schema
         self.yaml_path = yaml_path or []
+
+    @property
+    def is_platform_dependent(self):
+        return False
 
     def get_section_filename(self, section):
         return self.path
@@ -230,32 +234,48 @@ class SingleFileScope(ConfigScope):
             if self._raw_data is None:
                 return None
 
+            section_data = copy.deepcopy(self._raw_data)
             for key in self.yaml_path:
-                if self._raw_data is None:
+                if section_data is None:
                     return None
 
-                # support tuples as "or" in the yaml path
-                if isinstance(key, (list, tuple)):
-                    key = first_existing(self._raw_data, key)
+                section_data = section_data[key]
 
-                self._raw_data = self._raw_data[key]
-
-            for section_key, data in self._raw_data.items():
+            for section_key, data in section_data.items():
                 self.sections[section_key] = {section_key: data}
-
         return self.sections.get(section, None)
 
     def write_section(self, section):
-        validate(self.sections, self.schema)
+        data_to_write = copy.deepcopy(self._raw_data)
+        if syaml.markable(data_to_write):
+            setattr(data_to_write,
+                    yaml.comments.Comment.attrib,
+                    getattr(self._raw_data,
+                            yaml.comments.Comment.attrib,
+                            yaml.comments.Comment()))
+
+        if data_to_write is None:
+            data_to_write = {}
+            for key in self.yaml_path:
+                data_to_write = {key: data_to_write}
+
+        data_to_change = data_to_write
+        for key in self.yaml_path:
+            data_to_change = data_to_write[key]
+
+        for key, data in self.sections.items():
+            data_to_change[key] = data[key]
+
+        validate(data_to_write, self.schema)
         try:
             parent = os.path.dirname(self.path)
             mkdirp(parent)
 
-            tmp = os.path.join(parent, '.%s.tmp' % self.path)
+            tmp = os.path.join(parent, '.%s.tmp' % os.path.basename(self.path))
             with open(tmp, 'w') as f:
-                syaml.dump_config(self.sections, stream=f,
+                syaml.dump_config(data_to_write, stream=f,
                                   default_flow_style=False)
-            os.path.move(tmp, self.path)
+            os.rename(tmp, self.path)
         except (yaml.YAMLError, IOError) as e:
             raise ConfigFileError(
                 "Error writing to config file: '%s'" % str(e))
@@ -380,7 +400,9 @@ class Configuration(object):
     @property
     def file_scopes(self):
         """List of writable scopes with an associated file."""
-        return [s for s in self.scopes.values() if type(s) == ConfigScope]
+        return [s for s in self.scopes.values()
+                if (type(s) == ConfigScope
+                    or type(s) == SingleFileScope)]
 
     def highest_precedence_scope(self):
         """Non-internal scope with highest precedence."""
@@ -392,7 +414,7 @@ class Configuration(object):
         Platform-specific scopes are of the form scope/platform"""
         generator = reversed(self.file_scopes)
         highest = next(generator, None)
-        while highest and '/' in highest.name:
+        while highest and highest.is_platform_dependent:
             highest = next(generator, None)
         return highest
 
