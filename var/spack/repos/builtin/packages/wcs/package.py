@@ -31,7 +31,6 @@ class Wcs(CMakePackage):
         spec = self.spec
         args = [
             "-DBOOST_ROOT:PATH=" + spec['boost'].prefix,
-            "-DCEREAL_ROOT:PATH=" + spec['cereal'].prefix,
             "-DSBML_ROOT:PATH=" + spec['sbml'].prefix,
             "-DWCS_WITH_SBML:BOOL=ON",
         ]
