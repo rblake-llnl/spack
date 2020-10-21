@@ -24,7 +24,6 @@ class Wcs(CMakePackage):
     depends_on('boost+graph+filesystem+regex+system')
     depends_on('sbml@5.18.0:+cpp')
     depends_on('cmake@3.12:', type='build')
-    depends_on('cereal', type='build')
     depends_on('ross', when="des=ross")
     depends_on('mpi', when="des=ross")
 
