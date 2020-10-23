@@ -19,6 +19,7 @@ class Numactl(AutotoolsPackage):
     patch('numactl-2.0.11-sysmacros.patch', when="@2.0.11")
     # https://github.com/numactl/numactl/issues/94
     patch('numactl-2.0.14-symver.patch', when="@2.0.14")
+    patch('numactl-ax_tls.patch')
 
     depends_on('autoconf', type='build')
     depends_on('automake', type='build')
